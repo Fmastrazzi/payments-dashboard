@@ -1,0 +1,1719 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Payments Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: 'Montserrat', sans-serif; background: #F2F3F4; color: #232942; font-size: 14px; font-weight: 500; line-height: 22px; letter-spacing: 0.25px; }
+  .card { background: #FFFFFF; border: 1px solid #C4C6CF; border-radius: 12px; }
+  .tab-btn { transition: all 0.2s; border-bottom: 2px solid transparent; padding-bottom: 10px; font-weight: 400; color: #4C516D; border-radius: 0; background: none !important; }
+  .tab-btn.active { color: #232942; font-weight: 600; border-bottom: 2px solid #4CBF8C; }
+  .tab-btn:not(.active):hover { color: #232942; border-bottom: 2px solid #C4C6CF; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge-todo    { background: #D1DFFD; color: #005FC5; }
+  .badge-inprog  { background: #C6F7E1; color: #00A27F; }
+  .badge-done    { background: #C6F7E1; color: #00A27F; }
+  .badge-blocked { background: #FFE9EA; color: #DC4B5C; }
+  .badge-review  { background: #FFFAB9; color: #856800; }
+  .badge-testing { background: #EEF3FE; color: #005FC5; }
+  .priority-Highest { color: #DC4B5C; font-weight: 700; }
+  .priority-High    { color: #f97316; font-weight: 600; }
+  .priority-Medium  { color: #856800; }
+  .priority-Low     { color: #4C516D; }
+  .priority-Lowest  { color: #A9ACB9; }
+  .issue-row:hover { background: #F2F3F4; }
+  .spinner { border: 3px solid #C4C6CF; border-top-color: #4CBF8C; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .stat-card { background: #FFFFFF; border: 1px solid #C4C6CF; border-radius: 12px; }
+  .dev-bar { height: 8px; border-radius: 4px; background: #4CBF8C; transition: width 0.5s ease; }
+  .flow-step { position: relative; }
+  .flow-step::after { content: '→'; position: absolute; right: -12px; top: 50%; transform: translateY(-50%); color: #A9ACB9; font-size: 18px; }
+  .flow-step:last-child::after { display: none; }
+  select, input { background: #FFFFFF; border: 1px solid #828599; color: #232942; border-radius: 8px; padding: 6px 12px; font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 500; }
+  select:focus, input:focus { outline: none; border-color: #4CBF8C; }
+  .tooltip { position: relative; }
+  .tooltip:hover::after { content: attr(data-tip); position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%); background: #232942; border: 1px solid #C4C6CF; color: #FFFFFF; padding: 4px 8px; border-radius: 6px; font-size: 11px; white-space: nowrap; z-index: 10; }
+  /* Buttons */
+  .btn-primary { background: #4CBF8C; color: #FFFFFF; border-radius: 25px; padding: 8px 32px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; border: none; transition: background 0.2s; cursor: pointer; }
+  .btn-primary:hover { background: #50D6A5; }
+  .btn-primary:active { background: #00A27F; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: #005FC5; color: #FFFFFF; border-radius: 25px; padding: 8px 32px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; border: none; transition: background 0.2s; cursor: pointer; }
+  .btn-secondary:hover { background: #003794; }
+  .btn-danger { background: #DC4B5C; color: #FFFFFF; border-radius: 25px; padding: 8px 32px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; border: none; transition: background 0.2s; cursor: pointer; }
+  .btn-danger:hover { background: #FF6B75; }
+  /* Table headers */
+  thead tr { background: #F2F3F4; }
+  thead th { color: #232942; font-weight: 600; font-size: 12px; letter-spacing: 0.4px; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<header class="border-b border-[#C4C6CF] bg-white px-6 py-4 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 bg-[#4CBF8C] rounded-lg flex items-center justify-center text-white font-bold text-sm">P</div>
+    <h1 class="text-lg font-bold text-[#232942]">Payments Dashboard</h1>
+    <span class="text-[#A9ACB9] text-sm">comunidadfeliz.atlassian.net</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <span id="last-updated" class="text-[#A9ACB9] text-xs"></span>
+    <button onclick="refreshAll()" class="text-[#4C516D] hover:text-[#232942] text-xs px-3 py-1.5 rounded-full border border-[#C4C6CF] hover:border-[#828599] transition font-semibold">↻ Refresh</button>
+  </div>
+</header>
+
+<!-- Tabs -->
+<div class="px-6 pt-4 flex gap-6 bg-white border-b border-[#C4C6CF] pb-0">
+  <button class="tab-btn active px-1 py-2 text-sm" onclick="showTab('sprints')">Sprint Actual &amp; Anterior</button>
+  <button class="tab-btn px-1 py-2 text-sm" onclick="showTab('cycle')">Cycle Time</button>
+  <button class="tab-btn px-1 py-2 text-sm" onclick="showTab('backlog')">Preparar Próximo Sprint</button>
+  <button class="tab-btn px-1 py-2 text-sm" onclick="showTab('bugs')">🐛 Bugs</button>
+  <button class="tab-btn px-1 py-2 text-sm" onclick="showTab('ptl')">🤖 PTL Chat</button>
+</div>
+
+<!-- ─── TAB: SPRINTS ─────────────────────────────────────────────────────── -->
+<div id="tab-sprints" class="tab-content p-6">
+  <div id="sprint-loading" class="flex justify-center py-20"><div class="spinner"></div></div>
+  <div id="sprint-content" class="hidden">
+
+    <!-- Sprint Selector -->
+    <div class="flex items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-4">
+        <div>
+          <label class="text-xs text-[#4C516D] block mb-1 font-semibold" style="letter-spacing:0.4px">Sprint</label>
+          <select id="sprint-select" onchange="loadSprintIssues(this.value)" class="text-sm min-w-48"></select>
+        </div>
+        <div id="sprint-info" class="text-sm text-[#4C516D]"></div>
+      </div>
+      <button id="notify-btn" onclick="previewSprintSummary()"
+        class="btn-primary flex items-center gap-2">
+        <span id="notify-icon">💬</span>
+        <span id="notify-label">Preview y enviar a Slack</span>
+      </button>
+    </div>
+
+    <!-- Sprint Summary Preview Modal -->
+    <div id="notify-modal" class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+      <div class="card p-6 w-full max-w-2xl mx-auto max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-5">
+          <h3 class="text-base font-semibold text-[#232942]">Preview del mensaje — #cfz-payments-chat</h3>
+          <button onclick="document.getElementById('notify-modal').classList.add('hidden')" class="text-[#4C516D] hover:text-[#232942] text-xl leading-none">×</button>
+        </div>
+        <div id="notify-modal-body"></div>
+        <div id="notify-modal-actions" class="hidden mt-5 flex justify-end gap-3">
+          <button onclick="document.getElementById('notify-modal').classList.add('hidden')"
+            class="px-4 py-2 text-sm text-[#4C516D] hover:text-[#232942] border border-[#C4C6CF] hover:border-[#828599] rounded-full transition font-semibold">
+            Cancelar
+          </button>
+          <button id="send-btn" onclick="sendSprintSummary()"
+            class="btn-primary flex items-center gap-2">
+            <span id="send-icon">🚀</span>
+            <span id="send-label">Enviar a Slack</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div id="sprint-stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></div>
+
+    <!-- Developer Points -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Story Points por Desarrollador</h3>
+        <div id="dev-points-chart-container">
+          <canvas id="dev-points-chart" height="200"></canvas>
+        </div>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Issues por Estado</h3>
+        <canvas id="status-chart" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Issues Table -->
+    <div class="card overflow-hidden">
+      <div class="px-5 py-3 border-b border-[#C4C6CF] flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-[#232942]">Issues del Sprint</h3>
+        <input type="text" id="sprint-filter" placeholder="Filtrar..." class="text-xs w-48" oninput="filterSprintIssues()" />
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs border-b border-[#C4C6CF]">
+              <th class="text-left px-4 py-2">Clave</th>
+              <th class="text-left px-4 py-2">Resumen</th>
+              <th class="text-left px-4 py-2">Tipo</th>
+              <th class="text-left px-4 py-2">Asignado</th>
+              <th class="text-left px-4 py-2">Estado</th>
+              <th class="text-left px-4 py-2">SP</th>
+              <th class="text-left px-4 py-2">Cycle Time</th>
+              <th class="text-left px-4 py-2">Prioridad</th>
+            </tr>
+          </thead>
+          <tbody id="sprint-issues-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TAB: CYCLE TIME ──────────────────────────────────────────────────── -->
+<div id="tab-cycle" class="tab-content p-6 hidden">
+  <div class="flex items-center gap-4 mb-6 flex-wrap">
+    <div>
+      <label class="text-xs text-[#4C516D] block mb-1 font-semibold" style="letter-spacing:0.4px">Periodo</label>
+      <select id="cycle-days" onchange="loadCycleTime()" class="text-sm">
+        <option value="14">Últimos 14 días</option>
+        <option value="30" selected>Últimos 30 días</option>
+        <option value="60">Últimos 60 días</option>
+        <option value="90">Últimos 90 días</option>
+      </select>
+    </div>
+    <div class="flex items-center gap-3 mt-4">
+      <label class="flex items-center gap-2 cursor-pointer text-sm text-[#232942]">
+        <input type="checkbox" id="cycle-include-epics" onchange="loadCycleTime()" class="w-4 h-4 accent-[#4CBF8C]">
+        <span>Incluir Epics</span>
+      </label>
+      <span class="text-xs text-[#A9ACB9] tooltip" data-tip="Los Epics duran semanas/meses e inflan el promedio. El ciclo oficial del equipo excluye Epics.">
+        ⓘ por qué esto importa
+      </span>
+    </div>
+  </div>
+
+  <div id="cycle-loading" class="flex justify-center py-20"><div class="spinner"></div></div>
+  <div id="cycle-content" class="hidden">
+
+    <!-- Percentile Cards -->
+    <div class="mb-3" id="cycle-filter-note"></div>
+    <div id="cycle-bottleneck"></div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="cycle-stats"></div>
+
+    <!-- Historical Trend -->
+    <div class="card p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-semibold text-[#232942]">Tendencia Cycle Time — últimos 6 meses</h3>
+        <span id="history-loading-badge" class="text-xs text-[#A9ACB9]">Cargando...</span>
+      </div>
+      <canvas id="history-chart" height="90"></canvas>
+      <div id="history-table" class="mt-4 overflow-x-auto"></div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Cycle Time por Desarrollador (días prom.)</h3>
+        <canvas id="dev-cycle-chart" height="220"></canvas>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Tiempo Promedio por Estado</h3>
+        <canvas id="status-time-chart" height="220"></canvas>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-3">Cycle Time por Tipo de Issue</h3>
+        <div id="type-stats-table"></div>
+      </div>
+    </div>
+
+    <!-- Story Points por Dev -->
+    <div class="card p-5 mb-6">
+      <h3 class="text-sm font-semibold text-[#232942] mb-4">Story Points completados por Desarrollador</h3>
+      <div id="dev-stats-table"></div>
+    </div>
+
+    <!-- Scatter: Cycle Time over time -->
+    <div class="card p-5 mb-6">
+      <h3 class="text-sm font-semibold text-[#232942] mb-4">Cycle Time por Issue (scatter)</h3>
+      <canvas id="scatter-chart" height="120"></canvas>
+    </div>
+
+    <!-- Issues Table -->
+    <div class="card overflow-hidden">
+      <div class="px-5 py-3 border-b border-[#C4C6CF]">
+        <h3 class="text-sm font-semibold text-[#232942]">Detalle de Issues Completados</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs border-b border-[#C4C6CF]">
+              <th class="text-left px-4 py-2">Clave</th>
+              <th class="text-left px-4 py-2">Resumen</th>
+              <th class="text-left px-4 py-2">Asignado</th>
+              <th class="text-left px-4 py-2">SP</th>
+              <th class="text-left px-4 py-2">Cycle Time</th>
+              <th class="text-left px-4 py-2">Inicio</th>
+              <th class="text-left px-4 py-2">Fin</th>
+              <th class="text-left px-4 py-2">Flujo</th>
+            </tr>
+          </thead>
+          <tbody id="cycle-issues-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TAB: BACKLOG / PRÓXIMO SPRINT ───────────────────────────────────── -->
+<div id="tab-backlog" class="tab-content p-6 hidden">
+  <div id="backlog-loading" class="flex justify-center py-20"><div class="spinner"></div></div>
+  <div id="backlog-content" class="hidden">
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="backlog-stats"></div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Por Prioridad</h3>
+        <canvas id="priority-chart" height="200"></canvas>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Por Tipo</h3>
+        <canvas id="type-chart" height="200"></canvas>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-3">Selección para próximo sprint</h3>
+        <div class="text-xs text-[#4C516D] mb-3">Marca issues para incluir en el siguiente sprint</div>
+        <div id="sprint-selection-summary" class="text-sm"></div>
+        <button onclick="exportSelection()" class="mt-3 w-full btn-secondary text-xs px-3 py-2">Exportar selección</button>
+      </div>
+    </div>
+
+    <!-- Backlog Table -->
+    <div class="card overflow-hidden">
+      <div class="px-5 py-3 border-b border-[#C4C6CF] flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-[#232942]">Backlog</h3>
+        <div class="flex gap-2">
+          <select id="backlog-priority-filter" onchange="filterBacklog()" class="text-xs">
+            <option value="">Todas las prioridades</option>
+            <option value="Highest">Highest</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+          <select id="backlog-type-filter" onchange="filterBacklog()" class="text-xs">
+            <option value="">Todos los tipos</option>
+            <option value="Historia">Historia</option>
+            <option value="Tarea">Tarea</option>
+            <option value="Error">Error</option>
+            <option value="Hotfix">Hotfix</option>
+          </select>
+          <input type="text" id="backlog-search" placeholder="Buscar..." class="text-xs w-40" oninput="filterBacklog()" />
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs border-b border-[#C4C6CF]">
+              <th class="px-4 py-2 w-8"><input type="checkbox" id="select-all-backlog" onchange="toggleAllBacklog(this.checked)" /></th>
+              <th class="text-left px-4 py-2">Clave</th>
+              <th class="text-left px-4 py-2">Resumen</th>
+              <th class="text-left px-4 py-2">Tipo</th>
+              <th class="text-left px-4 py-2">Asignado</th>
+              <th class="text-left px-4 py-2">SP</th>
+              <th class="text-left px-4 py-2">Prioridad</th>
+            </tr>
+          </thead>
+          <tbody id="backlog-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TAB: BUGS ──────────────────────────────────────────────────────────── -->
+<div id="tab-bugs" class="tab-content p-6 hidden">
+  <div id="bugs-loading" class="flex justify-center py-20"><div class="spinner"></div></div>
+  <div id="bugs-content" class="hidden">
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="bugs-stats"></div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Por Estado</h3>
+        <canvas id="bug-status-chart" height="200"></canvas>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Por Desarrollador</h3>
+        <canvas id="bug-dev-chart" height="200"></canvas>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-sm font-semibold text-[#232942] mb-4">Bugs resueltos (90d)</h3>
+        <canvas id="bug-resolved-chart" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Open bugs table -->
+    <div class="card overflow-hidden">
+      <div class="px-5 py-3 border-b border-[#C4C6CF] flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-[#232942]">Bugs abiertos — ordenados por impacto</h3>
+        <div class="flex gap-2">
+          <select id="bug-priority-filter" onchange="filterBugs()" class="text-xs">
+            <option value="">Todas las prioridades</option>
+            <option value="Highest">Highest</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+          <select id="bug-status-filter" onchange="filterBugs()" class="text-xs">
+            <option value="">Todos los estados</option>
+          </select>
+          <input type="text" id="bug-search" placeholder="Buscar..." class="text-xs w-40" oninput="filterBugs()" />
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs border-b border-[#C4C6CF]">
+              <th class="text-left px-4 py-2">Clave</th>
+              <th class="text-left px-4 py-2">Resumen</th>
+              <th class="text-left px-4 py-2">Tipo</th>
+              <th class="text-left px-4 py-2">Asignado</th>
+              <th class="text-left px-4 py-2">Estado</th>
+              <th class="text-left px-4 py-2">Prioridad</th>
+              <th class="text-left px-4 py-2">Edad</th>
+              <th class="text-left px-4 py-2">Impacto</th>
+            </tr>
+          </thead>
+          <tbody id="bugs-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let sprintsData = [];
+let currentSprintIssues = [];
+let cycleData = null;
+let backlogData = [];
+let selectedBacklog = new Set();
+let devPointsChart, statusChart, devCycleChart, statusTimeChart, scatterChart, priorityChart, typeChart, historyChart;
+
+// ─── Tabs ───────────────────────────────────────────────────────────────────
+function showTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.classList.add('hidden');
+    el.classList.remove('ptl-visible');
+  });
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`tab-${tab}`);
+  el.classList.remove('hidden');
+  if (tab === 'ptl') el.classList.add('ptl-visible');
+  event.target.classList.add('active');
+
+  if (tab === 'cycle' && !cycleData) { loadCycleTime(); loadCycleHistory(); }
+  if (tab === 'backlog' && backlogData.length === 0) loadBacklog();
+  if (tab === 'bugs' && !bugsData) loadBugs();
+  if (tab === 'ptl') { ptlLoadStatus(); ptlFetchEpics(); setTimeout(() => document.getElementById('ptl-input')?.focus(), 50); }
+}
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+function statusBadge(status) {
+  const s = (status || '').toLowerCase();
+  let cls = 'badge-todo';
+  if (['in progress', 'en curso', 'validation', 'waiting for pr', 'rspec'].includes(s)) cls = 'badge-inprog';
+  else if (['review', 'revisar', 'changes required'].includes(s)) cls = 'badge-review';
+  else if (['testing', 'pruebas'].includes(s)) cls = 'badge-testing';
+  else if (['blocked', 'bloqueado'].includes(s)) cls = 'badge-blocked';
+  else if (['aprobado', 'approved', 'done', 'cerrada'].includes(s)) cls = 'badge-done';
+  return `<span class="badge ${cls}">${status || '—'}</span>`;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' });
+}
+
+function cycleBadge(days) {
+  if (days === null || days === undefined) return '<span style="color:#A9ACB9">—</span>';
+  const color = days <= 3 ? '#00A27F' : days <= 7 ? '#856800' : days <= 14 ? '#f97316' : '#DC4B5C';
+  return `<span style="color:${color};font-weight:600">${days}d</span>`;
+}
+
+function createStatCard(label, value, sub, color = '#005FC5') {
+  return `<div class="stat-card rounded-xl p-4">
+    <div class="text-xs text-[#4C516D] mb-1 font-semibold" style="letter-spacing:0.4px">${label}</div>
+    <div class="text-2xl font-bold" style="color:${color}">${value}</div>
+    ${sub ? `<div class="text-xs text-[#A9ACB9] mt-1">${sub}</div>` : ''}
+  </div>`;
+}
+
+function destroyChart(c) { if (c) c.destroy(); }
+
+// ─── Sprint Tab ──────────────────────────────────────────────────────────────
+async function initSprints() {
+  try {
+    const res = await fetch('/api/sprints');
+    sprintsData = await res.json();
+    if (sprintsData.error) throw new Error(sprintsData.error);
+
+    const sel = document.getElementById('sprint-select');
+    sel.innerHTML = sprintsData.map(s =>
+      `<option value="${s.id}">${s.name} — ${s.state === 'active' ? '🟢 Activo' : '⚪ Cerrado'}</option>`
+    ).join('');
+
+    document.getElementById('sprint-loading').classList.add('hidden');
+    document.getElementById('sprint-content').classList.remove('hidden');
+
+    if (sprintsData.length) loadSprintIssues(sprintsData[0].id);
+  } catch (e) {
+    document.getElementById('sprint-loading').innerHTML =
+      `<div class="text-[#DC4B5C] text-sm">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadSprintIssues(sprintId) {
+  const sprint = sprintsData.find(s => s.id == sprintId);
+  if (sprint) {
+    const start = fmtDate(sprint.startDate);
+    const end = fmtDate(sprint.endDate);
+    document.getElementById('sprint-info').textContent =
+      sprint.startDate ? `${start} → ${end}` : '';
+  }
+
+  const tbody = document.getElementById('sprint-issues-body');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8"><div class="spinner mx-auto"></div></td></tr>';
+
+  try {
+    const res = await fetch(`/api/sprint/${sprintId}/issues`);
+    currentSprintIssues = await res.json();
+    if (currentSprintIssues.error) throw new Error(currentSprintIssues.error);
+
+    renderSprintStats(currentSprintIssues);
+    renderSprintCharts(currentSprintIssues);
+    renderSprintIssues(currentSprintIssues);
+    updateLastUpdated();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-[#DC4B5C]">${e.message}</td></tr>`;
+  }
+}
+
+function renderSprintStats(issues) {
+  const total = issues.length;
+  const done = issues.filter(i => i.statusCategory === 'done').length;
+  const withSP = issues.filter(i => i.storyPoints);
+  const noSP = issues.filter(i => !i.storyPoints).length;
+  const totalSP = withSP.reduce((s, i) => s + i.storyPoints, 0);
+  const doneSP = issues.filter(i => i.statusCategory === 'done' && i.storyPoints)
+                       .reduce((s, i) => s + i.storyPoints, 0);
+  const spLabel = noSP > 0 ? `${doneSP}/${totalSP} SP · ${noSP} sin estimar` : `${doneSP}/${totalSP} completados`;
+  const avgCT = issues.filter(i => i.cycleTimeDays).map(i => i.cycleTimeDays);
+  const avgStr = avgCT.length ? (avgCT.reduce((a,b) => a+b, 0) / avgCT.length).toFixed(1) + 'd' : '—';
+
+  document.getElementById('sprint-stats').innerHTML =
+    createStatCard('Issues totales', total, `${done} completados`, '#005FC5') +
+    createStatCard('Story Points', `${totalSP}<span style="color:#A9ACB9;font-size:14px">+?×${noSP}</span>`, spLabel, '#4CBF8C') +
+    createStatCard('% Completado', `${total ? Math.round(done/total*100) : 0}%`, `${done}/${total} issues`, '#00A27F') +
+    createStatCard('Cycle Time Prom.', avgStr, 'desde En curso → Cerrada', '#f97316');
+}
+
+function renderSprintCharts(issues) {
+  // SP por dev
+  const devSP = {};
+  issues.forEach(i => {
+    const d = i.assignee;
+    if (!devSP[d]) devSP[d] = { total: 0, done: 0 };
+    devSP[d].total += i.storyPoints || 0;
+    if (i.statusCategory === 'done') devSP[d].done += i.storyPoints || 0;
+  });
+  const devNames = Object.keys(devSP).filter(d => d !== 'Sin asignar');
+  const devColors = ['#4CBF8C','#005FC5','#FFC000','#DC4B5C','#00A27F','#003794','#A7C2FB','#50D6A5'];
+
+  destroyChart(devPointsChart);
+  devPointsChart = new Chart(document.getElementById('dev-points-chart'), {
+    type: 'bar',
+    data: {
+      labels: devNames.map(n => n.split(' ')[0]),
+      datasets: [
+        { label: 'Completados', data: devNames.map(n => devSP[n].done), backgroundColor: '#4CBF8C' },
+        { label: 'En progreso', data: devNames.map(n => devSP[n].total - devSP[n].done), backgroundColor: '#A7C2FB' },
+      ]
+    },
+    options: {
+      responsive: true, plugins: { legend: { labels: { color: '#232942', font: { size: 11, family: 'Montserrat' } } } },
+      scales: {
+        x: { stacked: true, ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } },
+        y: { stacked: true, ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } }
+      }
+    }
+  });
+
+  // Status donut
+  const statusCount = {};
+  issues.forEach(i => { statusCount[i.status] = (statusCount[i.status] || 0) + 1; });
+  const statuses = Object.keys(statusCount);
+
+  destroyChart(statusChart);
+  statusChart = new Chart(document.getElementById('status-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: statuses,
+      datasets: [{ data: statuses.map(s => statusCount[s]), backgroundColor: devColors }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'right', labels: { color: '#232942', font: { size: 10, family: 'Montserrat' }, padding: 8 } } }
+    }
+  });
+}
+
+function renderSprintIssues(issues) {
+  const tbody = document.getElementById('sprint-issues-body');
+  tbody.innerHTML = issues.map(i => `
+    <tr class="issue-row border-b border-[#C4C6CF] text-xs cursor-pointer" onclick="window.open('https://comunidadfeliz.atlassian.net/browse/${i.key}','_blank')">
+      <td class="px-4 py-2 font-mono text-[#005FC5] font-semibold">${i.key}</td>
+      <td class="px-4 py-2 text-[#232942] max-w-xs truncate" title="${i.summary}">${i.summary}</td>
+      <td class="px-4 py-2 text-[#4C516D]">${i.issuetype}</td>
+      <td class="px-4 py-2 text-[#232942]">${i.assignee}</td>
+      <td class="px-4 py-2">${statusBadge(i.status)}</td>
+      <td class="px-4 py-2 text-center font-semibold ${i.storyPoints ? 'text-[#005FC5]' : 'text-[#A9ACB9]'}">${i.storyPoints || '—'}</td>
+      <td class="px-4 py-2">${cycleBadge(i.cycleTimeDays)}</td>
+      <td class="px-4 py-2 priority-${i.priority}">${i.priority || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function filterSprintIssues() {
+  const q = document.getElementById('sprint-filter').value.toLowerCase();
+  const filtered = currentSprintIssues.filter(i =>
+    i.key.toLowerCase().includes(q) ||
+    (i.summary || '').toLowerCase().includes(q) ||
+    (i.assignee || '').toLowerCase().includes(q) ||
+    (i.status || '').toLowerCase().includes(q)
+  );
+  renderSprintIssues(filtered);
+}
+
+// ─── Cycle Time Tab ──────────────────────────────────────────────────────────
+async function loadCycleTime() {
+  const days = document.getElementById('cycle-days').value;
+  const includeEpics = document.getElementById('cycle-include-epics')?.checked ? 'true' : 'false';
+  document.getElementById('cycle-loading').classList.remove('hidden');
+  document.getElementById('cycle-content').classList.add('hidden');
+
+  try {
+    const res = await fetch(`/api/cycle-time?days=${days}&includeEpics=${includeEpics}`);
+    cycleData = await res.json();
+    if (cycleData.error) throw new Error(cycleData.error);
+
+    renderCycleStats();
+    renderCycleCharts();
+    renderCycleIssues();
+    loadCycleHistory();
+    updateLastUpdated();
+
+    document.getElementById('cycle-loading').classList.add('hidden');
+    document.getElementById('cycle-content').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('cycle-loading').innerHTML =
+      `<div class="text-[#DC4B5C] text-sm">Error: ${e.message}</div>`;
+  }
+}
+
+function renderCycleStats() {
+  const includeEpics = document.getElementById('cycle-include-epics')?.checked;
+  const filterNote = includeEpics
+    ? '<span style="color:#856800" class="text-xs">⚠️ Epics incluidos — pueden inflar el promedio</span>'
+    : '<span style="color:#00A27F" class="text-xs">✓ Sin Epics — equivalente al ciclo oficial del equipo</span>';
+  document.getElementById('cycle-filter-note').innerHTML = filterNote;
+
+  // Bottleneck alert
+  const btn = cycleData.bottleneckStatus;
+  const bottleneckHtml = btn
+    ? `<div class="mb-4 px-4 py-3 rounded-lg border border-[#FFC000] bg-[#FFFAB9] flex items-start gap-3">
+        <span style="color:#856800" class="text-lg mt-0.5">⚠️</span>
+        <div>
+          <span style="color:#856800" class="text-sm font-semibold">Cuello de botella detectado: "${btn.status}"</span>
+          <span class="text-[#4C516D] text-xs ml-2">promedio de ${btn.avgDays}d en este estado</span>
+          ${cycleData.avgQaTime > 5 ? `<p class="text-[#4C516D] text-xs mt-1">Los issues pasan <strong style="color:#856800">${cycleData.avgQaTime}d en Testing</strong> vs <strong class="text-[#005FC5]">${cycleData.avgDevTime}d en desarrollo</strong>. Considerar reducir la cola de QA.</p>` : ''}
+        </div>
+      </div>`
+    : '';
+  document.getElementById('cycle-bottleneck').innerHTML = bottleneckHtml;
+
+  document.getElementById('cycle-stats').innerHTML =
+    createStatCard('Oficial (días hábiles)', cycleData.avgOfficialCycleTime ? `${cycleData.avgOfficialCycleTime}d` : '—', 'Como Jira Control Chart · Solo Historias', '#4CBF8C') +
+    createStatCard('Cycle Time Detallado', cycleData.avgCycleTime ? `${cycleData.avgCycleTime}d` : '—', 'Suma activos · Todos los tipos', '#00A27F') +
+    createStatCard('Dev time prom.', cycleData.avgDevTime ? `${cycleData.avgDevTime}d` : '—', 'En curso → Review → PR', '#005FC5') +
+    createStatCard('QA time prom.', cycleData.avgQaTime ? `${cycleData.avgQaTime}d` : '—', 'Testing → Aprobado', '#FFC000');
+}
+
+function renderCycleCharts() {
+  const colors = ['#4CBF8C','#005FC5','#FFC000','#DC4B5C','#00A27F','#003794','#A7C2FB','#50D6A5'];
+  const devs = cycleData.devStats;
+
+  // Dev cycle time bar
+  destroyChart(devCycleChart);
+  devCycleChart = new Chart(document.getElementById('dev-cycle-chart'), {
+    type: 'bar',
+    data: {
+      labels: devs.map(d => d.name.split(' ')[0]),
+      datasets: [{
+        label: 'Avg Cycle Time (días)',
+        data: devs.map(d => d.avgCycleTime),
+        backgroundColor: colors,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } },
+        y: { ticks: { color: '#4C516D', font: { size: 11, family: 'Montserrat' } }, grid: { color: '#EDEEF0' } }
+      }
+    }
+  });
+
+  // Status time bar — exclude statuses that are not counted in cycle time
+  const CYCLE_EXCLUDED = new Set(['Abierta','Open','Selected for Development','Blocked','Bloqueado','Aprobado','Approved','Done','done','Cerrada','cerrada']);
+  const statuses = cycleData.avgTimePerStatus.filter(s => s.avgDays > 0.1 && !CYCLE_EXCLUDED.has(s.status));
+  destroyChart(statusTimeChart);
+  statusTimeChart = new Chart(document.getElementById('status-time-chart'), {
+    type: 'bar',
+    data: {
+      labels: statuses.map(s => s.status),
+      datasets: [{
+        label: 'Días promedio',
+        data: statuses.map(s => s.avgDays),
+        backgroundColor: statuses.map((_, i) => colors[i % colors.length]),
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } },
+        y: { ticks: { color: '#4C516D', font: { size: 10, family: 'Montserrat' } }, grid: { color: '#EDEEF0' } }
+      }
+    }
+  });
+
+  // Dev stats table
+  const maxSP = Math.max(...devs.map(d => d.totalPoints), 1);
+  document.getElementById('dev-stats-table').innerHTML = devs.map((d, i) => `
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-24 text-xs text-[#232942] truncate font-medium">${d.name.split(' ')[0]}</div>
+      <div class="flex-1">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-[#4C516D]">${d.totalPoints} SP · ${d.issueCount} issues</span>
+          <span class="text-[#A9ACB9]">${d.avgCycleTime ? d.avgCycleTime + 'd avg' : '—'}</span>
+        </div>
+        <div class="h-2 bg-[#EDEEF0] rounded-full overflow-hidden">
+          <div class="h-full rounded-full" style="width:${(d.totalPoints/maxSP*100).toFixed(0)}%;background:${colors[i%colors.length]}"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  // Type stats table
+  const TYPE_COLORS = { 'Historia': '#005FC5', 'Error': '#DC4B5C', 'Hotfix': '#f97316', 'Tarea': '#4CBF8C', 'Technical Discovery': '#00A27F', 'Epic': '#FFC000' };
+  const typeRows = (cycleData.typeStats || []).map(t => {
+    const color = TYPE_COLORS[t.type] || '#4C516D';
+    const bar = t.avgCycleTime ? `<div class="h-1.5 rounded mt-1" style="width:${Math.min(t.avgCycleTime/40*100,100)}%;background:${color}"></div>` : '';
+    return `<div class="flex items-center justify-between py-1.5 border-b border-[#C4C6CF] text-xs">
+      <div>
+        <span style="color:${color}" class="font-semibold">${t.type}</span>
+        <span class="text-[#A9ACB9] ml-1">(${t.count})</span>
+        ${bar}
+      </div>
+      <div class="text-right">
+        <div class="text-[#232942] font-medium">${t.avgCycleTime ? t.avgCycleTime + 'd' : '—'}</div>
+        <div class="text-[#A9ACB9]">p50: ${t.p50 ? t.p50 + 'd' : '—'}</div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('type-stats-table').innerHTML = typeRows || '<span class="text-[#A9ACB9] text-xs">Sin datos</span>';
+
+  // Scatter chart
+  const scatterData = cycleData.issues
+    .filter(i => i.cycleTimeDays && i.cycleEndDate)
+    .map(i => ({ x: new Date(i.cycleEndDate).getTime(), y: i.cycleTimeDays, label: i.key }));
+
+  destroyChart(scatterChart);
+  scatterChart = new Chart(document.getElementById('scatter-chart'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        data: scatterData,
+        backgroundColor: '#4CBF8C80',
+        borderColor: '#4CBF8C',
+        pointRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const item = scatterData[ctx.dataIndex];
+              return `${item.label}: ${ctx.parsed.y}d`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: {
+            color: '#4C516D',
+            font: { family: 'Montserrat' },
+            callback: v => new Date(v).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+          },
+          grid: { color: '#EDEEF0' }
+        },
+        y: { ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' }, title: { display: true, text: 'días', color: '#4C516D' } }
+      }
+    }
+  });
+}
+
+async function loadCycleHistory() {
+  document.getElementById('history-loading-badge').textContent = 'Cargando...';
+  try {
+    const res = await fetch('/api/cycle-time/history?months=6');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const h = data.history;
+    const labels = h.map(m => m.label);
+
+    destroyChart(historyChart);
+    historyChart = new Chart(document.getElementById('history-chart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'line',
+            label: 'Oficial (días hábiles, Historias)',
+            data: h.map(m => m.avgOfficial),
+            borderColor: '#4CBF8C',
+            backgroundColor: 'transparent',
+            pointBackgroundColor: '#4CBF8C',
+            pointRadius: 6,
+            tension: 0.3,
+            yAxisID: 'y',
+            borderWidth: 2.5,
+            order: 0,
+          },
+          {
+            type: 'line',
+            label: 'Cycle Time Prom. (todos)',
+            data: h.map(m => m.avg),
+            borderColor: '#00A27F',
+            backgroundColor: 'transparent',
+            pointBackgroundColor: '#00A27F',
+            pointRadius: 5,
+            tension: 0.3,
+            yAxisID: 'y',
+            order: 0,
+          },
+          {
+            type: 'line',
+            label: 'P50 (mediana)',
+            data: h.map(m => m.p50),
+            borderColor: '#A7C2FB',
+            backgroundColor: 'transparent',
+            borderDash: [4, 3],
+            pointBackgroundColor: '#A7C2FB',
+            pointRadius: 4,
+            tension: 0.3,
+            yAxisID: 'y',
+            order: 1,
+          },
+          {
+            label: 'Dev time prom.',
+            data: h.map(m => m.avgDev),
+            backgroundColor: '#005FC550',
+            borderColor: '#005FC5',
+            borderWidth: 1,
+            yAxisID: 'y',
+            order: 2,
+          },
+          {
+            label: 'QA time prom.',
+            data: h.map(m => m.avgQa),
+            backgroundColor: '#FFC00050',
+            borderColor: '#FFC000',
+            borderWidth: 1,
+            yAxisID: 'y',
+            order: 3,
+          },
+          {
+            type: 'bar',
+            label: 'Issues completados',
+            data: h.map(m => m.count),
+            backgroundColor: '#D1DFFD',
+            borderColor: '#A7C2FB',
+            borderWidth: 1,
+            yAxisID: 'y2',
+            order: 4,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#232942', font: { size: 11, family: 'Montserrat' } } },
+          annotation: {
+            annotations: {
+              target: {
+                type: 'line',
+                yScaleID: 'y',
+                yMin: 4,
+                yMax: 4,
+                borderColor: '#DC4B5C',
+                borderWidth: 1,
+                borderDash: [6, 3],
+                label: { content: 'OKR <4d', enabled: true, color: '#DC4B5C', font: { size: 10 } }
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } },
+          y: {
+            position: 'left',
+            ticks: { color: '#4C516D', font: { family: 'Montserrat' }, callback: v => v + 'd' },
+            grid: { color: '#EDEEF0' },
+            title: { display: true, text: 'Días', color: '#4C516D' }
+          },
+          y2: {
+            position: 'right',
+            ticks: { color: '#005FC5', font: { family: 'Montserrat' } },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Issues', color: '#005FC5' }
+          }
+        }
+      }
+    });
+
+    // Summary table
+    document.getElementById('history-table').innerHTML = `
+      <div class="text-xs text-[#4C516D] mb-2">
+        <span style="color:#4CBF8C" class="font-semibold">Métrica oficial</span> = días hábiles desde último "En curso" → "Aprobado", solo Historias (equivale al Jira Control Chart).
+        <span class="text-[#4C516D] ml-2">Detallado</span> = suma de tiempo en estados activos (incluye todos los tipos).
+      </div>
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-[#4C516D] border-b border-[#C4C6CF]" style="background:#F2F3F4">
+            <th class="text-left py-1 px-2 font-semibold">Mes</th>
+            <th class="text-right py-1 px-2 font-semibold">Issues</th>
+            <th class="text-right py-1 px-2 font-semibold" style="color:#4CBF8C">Oficial (dh)</th>
+            <th class="text-right py-1 px-2 font-semibold">Detallado</th>
+            <th class="text-right py-1 px-2 font-semibold">Dev</th>
+            <th class="text-right py-1 px-2 font-semibold">QA</th>
+            <th class="text-left py-1 px-2 font-semibold">vs OKR</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${h.map(m => {
+            const off = m.avgOfficial;
+            const okO = off !== null && off <= 4;
+            const warnO = off !== null && off > 4 && off <= 8;
+            const colorO = off !== null ? (okO ? '#4CBF8C' : warnO ? '#856800' : '#DC4B5C') : '#A9ACB9';
+            const bar = off ? `<div class="inline-block h-2 rounded" style="width:${Math.min(off/15*100,100)}%;background:${okO?'#4CBF8C':warnO?'#FFC000':'#DC4B5C'}"></div>` : '';
+            return `<tr class="border-b border-[#C4C6CF] hover:bg-[#F2F3F4]">
+              <td class="py-1.5 px-2 text-[#232942] font-semibold">${m.label.toUpperCase()}</td>
+              <td class="py-1.5 px-2 text-right text-[#4C516D]">${m.count || '—'}</td>
+              <td class="py-1.5 px-2 text-right font-bold" style="color:${colorO}">${off !== null ? off + 'd' : '—'} <span class="text-[#A9ACB9] font-normal">(${m.officialCount || 0})</span></td>
+              <td class="py-1.5 px-2 text-right text-[#4C516D]">${m.avg !== null ? m.avg + 'd' : '—'}</td>
+              <td class="py-1.5 px-2 text-right text-[#005FC5]">${m.avgDev !== null ? m.avgDev + 'd' : '—'}</td>
+              <td class="py-1.5 px-2 text-right" style="color:#856800">${m.avgQa !== null ? m.avgQa + 'd' : '—'}</td>
+              <td class="py-1.5 px-2">${bar}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+
+    document.getElementById('history-loading-badge').textContent = `${h.filter(m => m.count > 0).length} meses con datos`;
+  } catch (e) {
+    document.getElementById('history-loading-badge').textContent = 'Error: ' + e.message;
+  }
+}
+
+function renderCycleIssues() {
+  const tbody = document.getElementById('cycle-issues-body');
+  const sorted = [...cycleData.issues].sort((a, b) => (b.cycleTimeDays || 0) - (a.cycleTimeDays || 0));
+  tbody.innerHTML = sorted.map(i => {
+    const FLOW_EXCLUDED = new Set(['Abierta','Open','Selected for Development','Blocked','Bloqueado','Aprobado','Approved','Done','done','Cerrada','cerrada','Closed','closed']);
+    const STATUS_ORDER_ARR = ['En curso','In Progress','Validation','Waiting for PR','RSpec','Review','Revisar','Testing','Pruebas','Changes Required'];
+    const flowHtml = Object.entries(i.timePerStatus || {})
+      .filter(([s, d]) => d > 0.1 && !FLOW_EXCLUDED.has(s))
+      .sort(([a], [b]) => {
+        const ai = STATUS_ORDER_ARR.indexOf(a), bi = STATUS_ORDER_ARR.indexOf(b);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      })
+      .map(([s, d]) => `<span class="tooltip" data-tip="${s}"><span class="badge badge-inprog">${s.substring(0,4)} ${d.toFixed(1)}d</span></span>`)
+      .join(' → ');
+
+    const devBadge = i.devTimeDays ? `<span class="text-[#005FC5] text-xs font-semibold">${i.devTimeDays}d dev</span>` : '';
+    const qaBadge  = i.qaTimeDays  ? `<span style="color:#856800" class="text-xs font-semibold ml-1">${i.qaTimeDays}d QA</span>` : '';
+    return `
+      <tr class="issue-row border-b border-[#C4C6CF] text-xs cursor-pointer" onclick="window.open('https://comunidadfeliz.atlassian.net/browse/${i.key}','_blank')">
+        <td class="px-4 py-2 font-mono text-[#005FC5] font-semibold">${i.key}</td>
+        <td class="px-4 py-2 text-[#232942] max-w-xs truncate" title="${i.summary}">${i.summary}</td>
+        <td class="px-4 py-2 text-[#232942]">${i.assignee}</td>
+        <td class="px-4 py-2 text-center text-[#005FC5] font-semibold">${i.storyPoints || '—'}</td>
+        <td class="px-4 py-2">${cycleBadge(i.cycleTimeDays)}<br>${devBadge}${qaBadge}</td>
+        <td class="px-4 py-2 text-[#4C516D]">${fmtDate(i.cycleStartDate)}</td>
+        <td class="px-4 py-2 text-[#4C516D]">${fmtDate(i.cycleEndDate)}</td>
+        <td class="px-4 py-2 max-w-xs">${flowHtml || '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ─── Backlog Tab ─────────────────────────────────────────────────────────────
+async function loadBacklog() {
+  document.getElementById('backlog-loading').classList.remove('hidden');
+  document.getElementById('backlog-content').classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/backlog');
+    backlogData = await res.json();
+    if (backlogData.error) throw new Error(backlogData.error);
+
+    renderBacklogStats();
+    renderBacklogCharts();
+    renderBacklog(backlogData);
+    updateLastUpdated();
+
+    document.getElementById('backlog-loading').classList.add('hidden');
+    document.getElementById('backlog-content').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('backlog-loading').innerHTML =
+      `<div class="text-[#DC4B5C] text-sm">Error: ${e.message}</div>`;
+  }
+}
+
+function renderBacklogStats() {
+  const total = backlogData.length;
+  const withSP = backlogData.filter(i => i.storyPoints).length;
+  const totalSP = backlogData.reduce((s, i) => s + (i.storyPoints || 0), 0);
+  const highest = backlogData.filter(i => i.priority === 'Highest' || i.priority === 'High').length;
+
+  document.getElementById('backlog-stats').innerHTML =
+    createStatCard('Issues en Backlog', total, 'listos para planificar', '#005FC5') +
+    createStatCard('Story Points total', totalSP, `${withSP} issues con SP`, '#4CBF8C') +
+    createStatCard('Alta prioridad', highest, 'Highest + High', '#DC4B5C') +
+    createStatCard('Seleccionados', `<span id="selected-count">0</span>`, '<span id="selected-sp">0</span> SP seleccionados', '#00A27F');
+}
+
+function renderBacklogCharts() {
+  const colors = ['#DC4B5C','#f97316','#FFC000','#4C516D','#A9ACB9'];
+  const priorities = ['Highest','High','Medium','Low','Lowest'];
+  const pCounts = priorities.map(p => backlogData.filter(i => i.priority === p).length);
+
+  destroyChart(priorityChart);
+  priorityChart = new Chart(document.getElementById('priority-chart'), {
+    type: 'doughnut',
+    data: { labels: priorities, datasets: [{ data: pCounts, backgroundColor: colors }] },
+    options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#232942', font: { size: 10, family: 'Montserrat' } } } } }
+  });
+
+  const typeCount = {};
+  backlogData.forEach(i => { typeCount[i.issuetype] = (typeCount[i.issuetype] || 0) + 1; });
+  const typeColors = ['#005FC5','#4CBF8C','#FFC000','#00A27F','#DC4B5C'];
+
+  destroyChart(typeChart);
+  typeChart = new Chart(document.getElementById('type-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(typeCount),
+      datasets: [{ data: Object.values(typeCount), backgroundColor: typeColors }]
+    },
+    options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#232942', font: { size: 10, family: 'Montserrat' } } } } }
+  });
+}
+
+function renderBacklog(issues) {
+  const tbody = document.getElementById('backlog-body');
+  tbody.innerHTML = issues.map(i => `
+    <tr class="issue-row border-b border-[#C4C6CF] text-xs">
+      <td class="px-4 py-2">
+        <input type="checkbox" class="backlog-check" value="${i.key}" data-sp="${i.storyPoints || 0}"
+          onchange="updateBacklogSelection()"
+          ${selectedBacklog.has(i.key) ? 'checked' : ''} />
+      </td>
+      <td class="px-4 py-2 font-mono text-[#005FC5] font-semibold cursor-pointer" onclick="window.open('https://comunidadfeliz.atlassian.net/browse/${i.key}','_blank')">${i.key}</td>
+      <td class="px-4 py-2 text-[#232942] max-w-xs truncate" title="${i.summary}">${i.summary}</td>
+      <td class="px-4 py-2 text-[#4C516D]">${i.issuetype}</td>
+      <td class="px-4 py-2 text-[#232942]">${i.assignee}</td>
+      <td class="px-4 py-2 text-center text-[#005FC5] font-semibold">${i.storyPoints || '—'}</td>
+      <td class="px-4 py-2 priority-${i.priority}">${i.priority || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function filterBacklog() {
+  const q = document.getElementById('backlog-search').value.toLowerCase();
+  const p = document.getElementById('backlog-priority-filter').value;
+  const t = document.getElementById('backlog-type-filter').value;
+  const filtered = backlogData.filter(i =>
+    (!p || i.priority === p) &&
+    (!t || i.issuetype === t) &&
+    (!q || i.key.toLowerCase().includes(q) || (i.summary||'').toLowerCase().includes(q))
+  );
+  renderBacklog(filtered);
+}
+
+function updateBacklogSelection() {
+  document.querySelectorAll('.backlog-check').forEach(cb => {
+    if (cb.checked) selectedBacklog.add(cb.value);
+    else selectedBacklog.delete(cb.value);
+  });
+  const selectedItems = backlogData.filter(i => selectedBacklog.has(i.key));
+  const totalSP = selectedItems.reduce((s, i) => s + (i.storyPoints || 0), 0);
+  const countEl = document.getElementById('selected-count');
+  const spEl = document.getElementById('selected-sp');
+  if (countEl) countEl.textContent = selectedBacklog.size;
+  if (spEl) spEl.textContent = totalSP;
+
+  document.getElementById('sprint-selection-summary').innerHTML =
+    selectedBacklog.size === 0
+      ? '<span class="text-[#A9ACB9] text-xs">Ningún issue seleccionado</span>'
+      : `<div class="text-sm"><span class="text-[#005FC5] font-bold">${selectedBacklog.size}</span> issues · <span class="text-[#4CBF8C] font-bold">${totalSP}</span> SP<br/>
+         <div class="text-xs text-[#4C516D] mt-1">${[...selectedBacklog].join(', ')}</div></div>`;
+}
+
+function toggleAllBacklog(checked) {
+  document.querySelectorAll('.backlog-check').forEach(cb => {
+    cb.checked = checked;
+    if (checked) selectedBacklog.add(cb.value);
+    else selectedBacklog.delete(cb.value);
+  });
+  updateBacklogSelection();
+}
+
+function exportSelection() {
+  if (selectedBacklog.size === 0) { alert('No hay issues seleccionados'); return; }
+  const items = backlogData.filter(i => selectedBacklog.has(i.key));
+  const totalSP = items.reduce((s, i) => s + (i.storyPoints || 0), 0);
+  const lines = [`SELECCIÓN PRÓXIMO SPRINT - ${new Date().toLocaleDateString('es-CL')}`, `Total: ${items.length} issues, ${totalSP} SP`, '', ...items.map(i => `${i.key} | ${i.priority} | ${i.storyPoints || '?'} SP | ${i.assignee} | ${i.summary}`)];
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'proximo-sprint.txt'; a.click();
+}
+
+function updateLastUpdated() {
+  document.getElementById('last-updated').textContent = `Actualizado: ${new Date().toLocaleTimeString('es-CL')}`;
+}
+
+
+async function refreshAll() {
+  cycleData = null;
+  backlogData = [];
+  const activeTab = document.querySelector('.tab-btn.active');
+  if (activeTab?.textContent.includes('Sprint')) { await initSprints(); }
+  else if (activeTab?.textContent.includes('Cycle')) { await loadCycleTime(); }
+  else if (activeTab?.textContent.includes('Sprint')) { await loadBacklog(); }
+  location.reload();
+}
+
+// ─── Slack Notify (Webhook) ───────────────────────────────────────────────────
+let _currentSummarySprintId = null;
+
+async function previewSprintSummary() {
+  const sprintId = document.getElementById('sprint-select').value;
+  if (!sprintId) return;
+  _currentSummarySprintId = sprintId;
+
+  const btn   = document.getElementById('notify-btn');
+  const icon  = document.getElementById('notify-icon');
+  const label = document.getElementById('notify-label');
+  btn.disabled = true;
+  icon.textContent = '⏳';
+  label.textContent = 'Cargando...';
+
+  document.getElementById('notify-modal-actions').classList.add('hidden');
+  document.getElementById('notify-modal-body').innerHTML =
+    `<div class="flex justify-center py-8"><div class="spinner"></div></div>`;
+  document.getElementById('notify-modal').classList.remove('hidden');
+
+  try {
+    const res  = await fetch(`/api/sprint/${sprintId}/summary`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const filledBar = Math.round(data.completionPct / 10);
+    const bar = '█'.repeat(filledBar) + '░'.repeat(10 - filledBar);
+
+    // Dev table
+    const devRows = data.byDev.map(d => `
+      <tr class="border-b border-[#C4C6CF] text-sm">
+        <td class="py-2 pr-4 text-[#232942]">${d.name}</td>
+        <td class="py-2 px-3 text-center text-[#4CBF8C] font-semibold">${d.done}</td>
+        <td class="py-2 px-3 text-center text-[#005FC5] font-semibold">${d.spDone}</td>
+        <td class="py-2 px-3 text-center font-semibold" style="color:#856800">${d.spPending}</td>
+      </tr>`).join('');
+
+    // Close soon list
+    const closeSoonHtml = data.closeSoon.length ? `
+      <div class="mt-5">
+        <div class="text-xs font-semibold text-[#232942] mb-2">🎯 Foco de cierre — próximas a terminar</div>
+        <div class="space-y-2">
+          ${data.closeSoon.map(i => `
+            <div class="flex items-start gap-2 text-xs">
+              <span class="text-[#005FC5] font-mono shrink-0 font-semibold">${i.key}</span>
+              <span class="text-[#232942] flex-1">${i.summary.slice(0,70)}${i.summary.length>70?'…':''}</span>
+              <span class="badge badge-testing shrink-0">${i.status}</span>
+              <span class="text-[#A9ACB9] shrink-0">${i.currentStatusDays}d</span>
+            </div>`).join('')}
+        </div>
+      </div>` : '';
+
+    document.getElementById('notify-modal-body').innerHTML = `
+      <div class="text-xs text-[#4C516D] mb-4">Canal destino: <span class="text-[#4CBF8C] font-semibold">#cfz-payments-chat</span> · Sprint: <span class="text-[#005FC5] font-semibold">${data.sprintName}</span></div>
+
+      <!-- Progress -->
+      <div class="bg-[#F2F3F4] rounded-lg p-4 mb-4 border border-[#C4C6CF]">
+        <div class="font-mono text-sm text-[#232942] mb-1">${bar} <span class="text-[#232942] font-bold">${data.completionPct}%</span></div>
+        <div class="grid grid-cols-4 gap-3 mt-3">
+          <div class="text-center">
+            <div class="text-lg font-bold text-[#232942]">${data.done}/${data.total}</div>
+            <div class="text-xs text-[#4C516D]">Tareas</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold text-[#005FC5]">${data.doneSP}/${data.totalSP}</div>
+            <div class="text-xs text-[#4C516D]">SP</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold text-[#00A27F]">${data.inTestingCount}</div>
+            <div class="text-xs text-[#4C516D]">En Testing</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold" style="color:#856800">${data.avgQaTime !== null ? data.avgQaTime + 'd' : 'N/D'}</div>
+            <div class="text-xs text-[#4C516D]">Prom. QA</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dev table -->
+      <div class="bg-[#F2F3F4] rounded-lg p-4 mb-4 border border-[#C4C6CF]">
+        <div class="text-xs font-semibold text-[#232942] mb-3">👥 Avance por desarrollador</div>
+        <table class="w-full">
+          <thead>
+            <tr class="text-xs text-[#4C516D] border-b border-[#C4C6CF]">
+              <th class="pb-2 text-left font-semibold">Desarrollador</th>
+              <th class="pb-2 px-3 text-center font-semibold">Done</th>
+              <th class="pb-2 px-3 text-center font-semibold">SP ✓</th>
+              <th class="pb-2 px-3 text-center font-semibold">SP pend.</th>
+            </tr>
+          </thead>
+          <tbody>${devRows}</tbody>
+        </table>
+      </div>
+
+      <!-- Closed count -->
+      <div class="text-xs text-[#232942] mb-2">✅ <span class="font-semibold">Issues cerradas en el sprint:</span> <span class="text-[#4CBF8C] font-bold">${data.closedCount}</span></div>
+
+      ${closeSoonHtml}
+    `;
+
+    document.getElementById('notify-modal-actions').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('notify-modal-body').innerHTML =
+      `<div class="text-[#DC4B5C] text-sm">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    icon.textContent = '💬';
+    label.textContent = 'Preview y enviar a Slack';
+  }
+}
+
+async function sendSprintSummary() {
+  const sprintId = _currentSummarySprintId;
+  if (!sprintId) return;
+
+  const sendBtn = document.getElementById('send-btn');
+  document.getElementById('send-icon').textContent = '⏳';
+  document.getElementById('send-label').textContent = 'Enviando...';
+  sendBtn.disabled = true;
+
+  try {
+    const res  = await fetch(`/api/sprint/${sprintId}/notify-webhook`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    document.getElementById('notify-modal-body').innerHTML += `
+      <div class="mt-4 p-3 bg-[#C6F7E1] border border-[#4CBF8C] rounded-lg text-sm text-[#00A27F]">
+        ✅ Mensaje enviado a #cfz-payments-chat
+      </div>`;
+    document.getElementById('notify-modal-actions').classList.add('hidden');
+  } catch (e) {
+    document.getElementById('notify-modal-body').innerHTML += `
+      <div class="mt-4 p-3 bg-[#FFE9EA] border border-[#DC4B5C] rounded-lg text-sm text-[#DC4B5C]">
+        ❌ ${e.message}
+        ${e.message.includes('SLACK_WEBHOOK_URL') ? '<div class="mt-1 text-xs">Agrega <code class="bg-[#F2F3F4] px-1 rounded border border-[#C4C6CF]">SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...</code> en tu .env</div>' : ''}
+      </div>`;
+  } finally {
+    sendBtn.disabled = false;
+    document.getElementById('send-icon').textContent = '🚀';
+    document.getElementById('send-label').textContent = 'Enviar a Slack';
+  }
+}
+
+// ─── Bugs Tab ────────────────────────────────────────────────────────────────
+let bugsData = null;
+let bugChart1, bugChart2, bugChart3;
+
+async function loadBugs() {
+  document.getElementById('bugs-loading').classList.remove('hidden');
+  document.getElementById('bugs-content').classList.add('hidden');
+  try {
+    const res = await fetch('/api/bugs');
+    bugsData = await res.json();
+    if (bugsData.error) throw new Error(bugsData.error);
+    renderBugsStats();
+    renderBugsCharts();
+    renderBugsTable(bugsData.openBugs);
+    updateLastUpdated();
+    document.getElementById('bugs-loading').classList.add('hidden');
+    document.getElementById('bugs-content').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('bugs-loading').innerHTML = `<div class="text-[#DC4B5C] text-sm">${e.message}</div>`;
+  }
+}
+
+function impactBadge(score) {
+  if (score >= 60) return `<span class="badge" style="background:#FFE9EA;color:#DC4B5C">Crítico</span>`;
+  if (score >= 45) return `<span class="badge" style="background:#FFF3E0;color:#f97316">Alto</span>`;
+  if (score >= 30) return `<span class="badge" style="background:#FFFAB9;color:#856800">Medio</span>`;
+  return `<span class="badge badge-todo">Bajo</span>`;
+}
+
+function renderBugsStats() {
+  document.getElementById('bugs-stats').innerHTML =
+    createStatCard('Bugs abiertos', bugsData.openCount, 'Error + Hotfix sin resolver', '#DC4B5C') +
+    createStatCard('Críticos', bugsData.criticalCount, 'Prioridad Highest + High', '#f97316') +
+    createStatCard('Resueltos (90d)', bugsData.resolvedCount, `avg resolución ${bugsData.avgResolutionTime || '—'}d`, '#4CBF8C') +
+    createStatCard('Mediana resolución', bugsData.p50 ? `${bugsData.p50}d` : '—', 'P50 cycle time bugs', '#00A27F');
+}
+
+function renderBugsCharts() {
+  const colors = ['#DC4B5C','#f97316','#FFC000','#005FC5','#4C516D','#4CBF8C'];
+
+  // By status
+  const statuses = Object.entries(bugsData.byStatus);
+  destroyChart(bugChart1);
+  bugChart1 = new Chart(document.getElementById('bug-status-chart'), {
+    type: 'doughnut',
+    data: { labels: statuses.map(([s]) => s), datasets: [{ data: statuses.map(([,n]) => n), backgroundColor: colors }] },
+    options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#232942', font: { size: 10, family: 'Montserrat' } } } } }
+  });
+
+  // Populate status filter
+  const sel = document.getElementById('bug-status-filter');
+  sel.innerHTML = '<option value="">Todos los estados</option>' +
+    statuses.map(([s]) => `<option value="${s}">${s}</option>`).join('');
+
+  // By assignee
+  const devs = Object.entries(bugsData.byAssignee).sort(([,a],[,b]) => b.total - a.total);
+  destroyChart(bugChart2);
+  bugChart2 = new Chart(document.getElementById('bug-dev-chart'), {
+    type: 'bar',
+    data: {
+      labels: devs.map(([n]) => n.split(' ')[0]),
+      datasets: [
+        { label: 'Highest', data: devs.map(([,d]) => d.highest), backgroundColor: '#DC4B5C' },
+        { label: 'High', data: devs.map(([,d]) => d.high), backgroundColor: '#f97316' },
+        { label: 'Resto', data: devs.map(([,d]) => d.total - d.highest - d.high), backgroundColor: '#EDEEF0' },
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { stacked: true, ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } },
+        y: { stacked: true, ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } }
+      },
+      plugins: { legend: { labels: { color: '#232942', font: { size: 10, family: 'Montserrat' } } } }
+    }
+  });
+
+  // Resolved cycle times histogram
+  const resolved = bugsData.resolvedBugs;
+  const buckets = ['0-3d','4-7d','8-14d','15-30d','>30d'];
+  const bucketed = [0,0,0,0,0];
+  resolved.forEach(i => {
+    const d = i.cycleTimeDays;
+    if (d <= 3) bucketed[0]++;
+    else if (d <= 7) bucketed[1]++;
+    else if (d <= 14) bucketed[2]++;
+    else if (d <= 30) bucketed[3]++;
+    else bucketed[4]++;
+  });
+  destroyChart(bugChart3);
+  bugChart3 = new Chart(document.getElementById('bug-resolved-chart'), {
+    type: 'bar',
+    data: { labels: buckets, datasets: [{ label: 'Bugs', data: bucketed, backgroundColor: ['#4CBF8C','#005FC5','#FFC000','#f97316','#DC4B5C'] }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } },
+        y: { ticks: { color: '#4C516D', font: { family: 'Montserrat' } }, grid: { color: '#EDEEF0' } }
+      }
+    }
+  });
+}
+
+function renderBugsTable(bugs) {
+  const tbody = document.getElementById('bugs-body');
+  tbody.innerHTML = bugs.map(b => `
+    <tr class="issue-row border-b border-[#C4C6CF] text-xs cursor-pointer" onclick="window.open('https://comunidadfeliz.atlassian.net/browse/${b.key}','_blank')">
+      <td class="px-4 py-2 font-mono text-[#005FC5] font-semibold">${b.key}</td>
+      <td class="px-4 py-2 text-[#232942] max-w-xs truncate" title="${b.summary}">${b.summary}</td>
+      <td class="px-4 py-2"><span class="badge" style="background:${b.issuetype==='Hotfix'?'#FFE9EA':'#EEF3FE'};color:${b.issuetype==='Hotfix'?'#f97316':'#005FC5'}">${b.issuetype}</span></td>
+      <td class="px-4 py-2 text-[#232942]">${b.assignee}</td>
+      <td class="px-4 py-2">${statusBadge(b.status)}</td>
+      <td class="px-4 py-2 priority-${b.priority}">${b.priority || '—'}</td>
+      <td class="px-4 py-2 text-[#4C516D]">${b.ageDays}d</td>
+      <td class="px-4 py-2">${impactBadge(b.impactScore)}</td>
+    </tr>
+  `).join('');
+}
+
+function filterBugs() {
+  const p = document.getElementById('bug-priority-filter').value;
+  const s = document.getElementById('bug-status-filter').value;
+  const q = document.getElementById('bug-search').value.toLowerCase();
+  const filtered = bugsData.openBugs.filter(b =>
+    (!p || b.priority === p) &&
+    (!s || b.status === s) &&
+    (!q || b.key.toLowerCase().includes(q) || (b.summary||'').toLowerCase().includes(q))
+  );
+  renderBugsTable(filtered);
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+initSprints();
+</script>
+
+<!-- ─── PTL Chat Tab ──────────────────────────────────────────────────────── -->
+<style>
+  /* PTL layout */
+  #tab-ptl { height: calc(100vh - 113px); display: none; flex-direction: row; }
+  #tab-ptl.ptl-visible { display: flex !important; }
+
+  /* Sidebar */
+  #ptl-sidebar { width: 260px; flex-shrink: 0; border-right: 1px solid #C4C6CF; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+  #ptl-sidebar-inner { flex: 1; overflow-y: auto; padding: 16px 12px; }
+
+  /* Main chat */
+  #ptl-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #F2F3F4; }
+  #ptl-messages { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; }
+
+  /* Messages */
+  .ptl-turn { margin-bottom: 20px; }
+  .ptl-turn-user { display: flex; justify-content: flex-end; }
+  .ptl-turn-user .ptl-user-bubble {
+    background: #4CBF8C; color: #fff;
+    border-radius: 18px 18px 4px 18px;
+    padding: 10px 16px; max-width: 70%;
+    font-size: 13px; line-height: 20px; font-weight: 500;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .ptl-turn-assistant { display: flex; gap: 10px; align-items: flex-start; }
+  .ptl-avatar { width: 28px; height: 28px; border-radius: 8px; background: #4CBF8C; color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .ptl-response { flex: 1; background: #fff; border: 1px solid #C4C6CF; border-radius: 4px 12px 12px 12px; padding: 16px 20px; font-size: 13px; line-height: 22px; color: #232942; min-width: 0; }
+
+  /* Markdown inside response */
+  .ptl-response h1, .ptl-response h2 { font-size: 15px; font-weight: 700; color: #232942; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #EDEEF0; }
+  .ptl-response h3 { font-size: 14px; font-weight: 700; color: #232942; margin: 14px 0 6px; }
+  .ptl-response h4 { font-size: 13px; font-weight: 700; color: #4C516D; margin: 10px 0 4px; }
+  .ptl-response p { margin: 6px 0; }
+  .ptl-response ul, .ptl-response ol { padding-left: 20px; margin: 8px 0; }
+  .ptl-response li { margin-bottom: 4px; }
+  .ptl-response strong { font-weight: 700; }
+  .ptl-response em { font-style: italic; }
+  .ptl-response code { font-family: 'SF Mono', 'Fira Code', monospace; background: #F2F3F4; color: #DC4B5C; padding: 1px 5px; border-radius: 4px; font-size: 12px; border: 1px solid #EDEEF0; }
+  .ptl-response pre { background: #1E2235; border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 10px 0; }
+  .ptl-response pre code { background: none; color: #A8D8A8; padding: 0; border: none; font-size: 12px; line-height: 18px; }
+  .ptl-response blockquote { border-left: 3px solid #4CBF8C; padding-left: 12px; margin: 8px 0; color: #4C516D; }
+  .ptl-response table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+  .ptl-response th { background: #F2F3F4; font-weight: 600; padding: 6px 10px; text-align: left; border: 1px solid #C4C6CF; }
+  .ptl-response td { padding: 6px 10px; border: 1px solid #EDEEF0; }
+  .ptl-response hr { border: none; border-top: 1px solid #EDEEF0; margin: 14px 0; }
+
+  /* Typing dots */
+  .ptl-typing { display: flex; align-items: center; gap: 5px; padding: 12px 16px; }
+  .ptl-typing span { width: 7px; height: 7px; border-radius: 50%; background: #C4C6CF; animation: ptlbounce 1.2s infinite; }
+  .ptl-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .ptl-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes ptlbounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+
+  /* Input area */
+  #ptl-input-area { flex-shrink: 0; padding: 12px 24px 16px; background: #F2F3F4; }
+  #ptl-input-wrap { background: #fff; border: 1px solid #C4C6CF; border-radius: 12px; padding: 10px 14px; display: flex; gap: 10px; align-items: flex-end; transition: border-color 0.2s; }
+  #ptl-input-wrap:focus-within { border-color: #4CBF8C; }
+  #ptl-input { flex: 1; resize: none; border: none; outline: none; font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 500; color: #232942; line-height: 20px; background: transparent; max-height: 160px; overflow-y: auto; }
+
+  /* Sidebar items */
+  .ptl-epic-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; margin-bottom: 4px; transition: all 0.15s; }
+  .ptl-epic-item:hover { background: #F2F3F4; border-color: #C4C6CF; }
+  .ptl-epic-item.active { background: #EBF9F3; border-color: #4CBF8C; }
+  .ptl-epic-key { font-size: 10px; font-weight: 700; color: #4CBF8C; }
+  .ptl-epic-title { font-size: 12px; font-weight: 500; color: #232942; line-height: 16px; margin-top: 2px; }
+  .ptl-epic-meta { font-size: 10px; color: #A9ACB9; margin-top: 2px; }
+</style>
+
+<div id="tab-ptl" class="tab-content hidden">
+
+  <!-- Sidebar: epics list -->
+  <div id="ptl-sidebar">
+    <div style="padding:14px 12px 10px; border-bottom:1px solid #EDEEF0; flex-shrink:0">
+      <p class="text-xs font-bold text-[#232942]" style="letter-spacing:0.5px">EPICS — PAY</p>
+      <p class="text-xs text-[#A9ACB9] mt-0.5">Selecciona para analizar</p>
+    </div>
+    <div id="ptl-sidebar-inner">
+      <p class="text-xs text-[#A9ACB9] text-center py-4">Cargando epics…</p>
+    </div>
+  </div>
+
+  <!-- Main chat -->
+  <div id="ptl-main">
+
+    <!-- Topbar -->
+    <div style="padding:10px 20px; border-bottom:1px solid #C4C6CF; background:#fff; display:flex; align-items:center; justify-content:space-between; flex-shrink:0">
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="width:28px;height:28px;border-radius:8px;background:#4CBF8C;display:flex;align-items:center;justify-content:center;font-size:14px">🤖</div>
+        <div>
+          <p class="text-sm font-semibold text-[#232942]">PTL — Product Tech Lead</p>
+          <p id="ptl-provider-badge" class="text-xs text-[#A9ACB9]">cargando…</p>
+        </div>
+      </div>
+      <button onclick="ptlClearChat()" class="text-xs text-[#A9ACB9] hover:text-[#DC4B5C] border border-[#C4C6CF] hover:border-[#DC4B5C] rounded-full px-3 py-1 font-semibold transition">↺ Nueva conversación</button>
+    </div>
+
+    <!-- Messages -->
+    <div id="ptl-messages">
+      <div id="ptl-welcome" style="text-align:center; padding:48px 24px">
+        <div style="font-size:40px;margin-bottom:12px">🤖</div>
+        <p class="text-sm font-semibold text-[#232942]" style="margin-bottom:6px">PTL listo para ayudarte</p>
+        <p class="text-xs text-[#4C516D]" style="margin-bottom:24px;max-width:400px;margin-left:auto;margin-right:auto">Selecciona un epic del panel izquierdo para análisis automático, o escribe tu pregunta directamente.</p>
+        <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px">
+          <button onclick="ptlSuggestion(this)" class="text-xs border border-[#C4C6CF] hover:border-[#4CBF8C] text-[#4C516D] hover:text-[#232942] rounded-full px-3 py-1.5 transition font-medium bg-white">¿Cómo funciona el processor de Webpay OneClick?</button>
+          <button onclick="ptlSuggestion(this)" class="text-xs border border-[#C4C6CF] hover:border-[#4CBF8C] text-[#4C516D] hover:text-[#232942] rounded-full px-3 py-1.5 transition font-medium bg-white">¿Qué pasos hay que seguir para integrar una nueva pasarela?</button>
+          <button onclick="ptlSuggestion(this)" class="text-xs border border-[#C4C6CF] hover:border-[#4CBF8C] text-[#4C516D] hover:text-[#232942] rounded-full px-3 py-1.5 transition font-medium bg-white">¿Cómo funciona la reconciliación bancaria con Fintoc?</button>
+          <button onclick="ptlSuggestion(this)" class="text-xs border border-[#C4C6CF] hover:border-[#4CBF8C] text-[#4C516D] hover:text-[#232942] rounded-full px-3 py-1.5 transition font-medium bg-white">Flujo de pago automático de extremo a extremo</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div id="ptl-input-area">
+      <div id="ptl-input-wrap">
+        <textarea id="ptl-input" rows="1" placeholder="Escribe tu pregunta o selecciona un epic… (Enter para enviar, Shift+Enter nueva línea)"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ptlSend();}"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px'"></textarea>
+        <button id="ptl-send-btn" onclick="ptlSend()" class="btn-primary" style="padding:7px 20px;flex-shrink:0;align-self:flex-end">Enviar</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script>
+// ── PTL state ────────────────────────────────────────────────────────────────
+const ptlSessionId = 'ptl-' + Date.now();
+let ptlStreaming = false;
+
+// Configure marked
+marked.setOptions({ breaks: true, gfm: true });
+
+// ── showTab override for PTL flex layout ─────────────────────────────────────
+const _origShowTab = showTab;
+function showTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.classList.add('hidden');
+    el.classList.remove('ptl-visible');
+  });
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('tab-' + tab);
+  el.classList.remove('hidden');
+  if (tab === 'ptl') {
+    el.classList.add('ptl-visible');
+    ptlLoadStatus();
+    ptlFetchEpics();
+    setTimeout(() => document.getElementById('ptl-input')?.focus(), 50);
+  }
+  event.target.classList.add('active');
+  if (tab === 'cycle' && !cycleData) { loadCycleTime(); loadCycleHistory(); }
+  if (tab === 'backlog' && backlogData.length === 0) loadBacklog();
+  if (tab === 'bugs' && !bugsData) loadBugs();
+}
+
+// ── Provider badge ────────────────────────────────────────────────────────────
+async function ptlLoadStatus() {
+  try {
+    const d = await fetch('/api/ptl/status').then(r => r.json());
+    const badge = document.getElementById('ptl-provider-badge');
+    if (!badge) return;
+    if (!d.provider) {
+      badge.innerHTML = `<span style="color:#DC4B5C">⚠ Sin proveedor — agrega GROQ_API_KEY al .env</span>`;
+    } else {
+      const icons = { anthropic: '⚡', groq: '🚀', ollama: '🏠' };
+      badge.innerHTML = `<span style="color:#00A27F">${icons[d.provider]||'🤖'} ${d.provider} · ${d.model}</span>`;
+    }
+  } catch {}
+}
+
+// ── Epics sidebar ─────────────────────────────────────────────────────────────
+let ptlEpicsLoaded = false;
+async function ptlFetchEpics() {
+  if (ptlEpicsLoaded) return;
+  try {
+    const epics = await fetch('/api/ptl/epics').then(r => r.json());
+    ptlEpicsLoaded = true;
+    const inner = document.getElementById('ptl-sidebar-inner');
+    if (!epics.length) { inner.innerHTML = '<p class="text-xs text-[#A9ACB9] text-center py-4">Sin epics encontrados</p>'; return; }
+    inner.innerHTML = epics.map(e => `
+      <div class="ptl-epic-item" onclick="ptlSelectEpic('${e.key}', this)">
+        <div class="ptl-epic-key">${e.key}</div>
+        <div class="ptl-epic-title">${e.summary}</div>
+        <div class="ptl-epic-meta">${e.status || ''}${e.assignee ? ' · ' + e.assignee : ''}</div>
+      </div>`).join('');
+  } catch (e) {
+    document.getElementById('ptl-sidebar-inner').innerHTML = `<p class="text-xs text-[#DC4B5C] text-center py-4">${e.message}</p>`;
+  }
+}
+
+async function ptlSelectEpic(epicKey, el) {
+  document.querySelectorAll('.ptl-epic-item').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  el.querySelector('.ptl-epic-meta').textContent = 'Cargando…';
+
+  try {
+    const epic = await fetch(`/api/ptl/epic/${epicKey}`).then(r => r.json());
+    if (epic.error) throw new Error(epic.error);
+
+    el.querySelector('.ptl-epic-meta').textContent = `${epic.status || ''} · ${epic.issues.length} historias`;
+
+    const issueLines = epic.issues.length
+      ? epic.issues.map(i =>
+          `- [${i.key}] (${i.type}, ${i.status}, ${i.assignee}${i.points ? ', ' + i.points + 'pts' : ''}): ${i.summary}${i.description ? '\n  > ' + i.description.slice(0, 250) : ''}`
+        ).join('\n')
+      : '(sin historias hijas)';
+
+    const msg = `Analiza este epic y propone una solución técnica completa:
+
+**Epic:** ${epic.key} — ${epic.summary}
+**Estado:** ${epic.status || 'N/A'} | **Responsable:** ${epic.assignee || 'Sin asignar'}
+**Descripción:** ${epic.description || '(sin descripción)'}
+
+**Historias hijas (${epic.issues.length}):**
+${issueLines}`;
+
+    const input = document.getElementById('ptl-input');
+    input.value = msg;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+    input.focus();
+  } catch (e) {
+    el.querySelector('.ptl-epic-meta').textContent = '❌ ' + e.message;
+  }
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function ptlSuggestion(btn) {
+  document.getElementById('ptl-input').value = btn.textContent.trim();
+  ptlSend();
+}
+
+function ptlClearChat() {
+  fetch('/api/ptl/session/' + ptlSessionId, { method: 'DELETE' });
+  const msgs = document.getElementById('ptl-messages');
+  msgs.innerHTML = `<div id="ptl-welcome" style="text-align:center;padding:48px 24px">
+    <div style="font-size:40px;margin-bottom:12px">🤖</div>
+    <p class="text-sm font-semibold text-[#232942]" style="margin-bottom:6px">PTL listo para ayudarte</p>
+    <p class="text-xs text-[#4C516D]" style="margin-bottom:24px">Selecciona un epic o escribe tu pregunta.</p>
+  </div>`;
+  document.getElementById('ptl-input').value = '';
+  document.querySelectorAll('.ptl-epic-item').forEach(e => e.classList.remove('active'));
+}
+
+async function ptlSend() {
+  if (ptlStreaming) return;
+  const input = document.getElementById('ptl-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  const welcome = document.getElementById('ptl-welcome');
+  if (welcome) welcome.remove();
+
+  input.value = '';
+  input.style.height = 'auto';
+  ptlStreaming = true;
+  document.getElementById('ptl-send-btn').disabled = true;
+
+  const msgs = document.getElementById('ptl-messages');
+
+  // User turn
+  const userDiv = document.createElement('div');
+  userDiv.className = 'ptl-turn ptl-turn-user';
+  userDiv.innerHTML = `<div class="ptl-user-bubble">${msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+  msgs.appendChild(userDiv);
+
+  // Assistant turn with typing
+  const assistDiv = document.createElement('div');
+  assistDiv.className = 'ptl-turn ptl-turn-assistant';
+  assistDiv.innerHTML = `<div class="ptl-avatar">🤖</div><div class="ptl-response"><div class="ptl-typing"><span></span><span></span><span></span></div></div>`;
+  msgs.appendChild(assistDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const responseEl = assistDiv.querySelector('.ptl-response');
+
+  try {
+    const res = await fetch('/api/ptl/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, sessionId: ptlSessionId }),
+    });
+
+    responseEl.innerHTML = '';
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '', fullText = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.error) { responseEl.innerHTML = `<span style="color:#DC4B5C">❌ ${data.error}</span>`; break; }
+          if (data.delta) { fullText += data.delta; responseEl.innerHTML = marked.parse(fullText); }
+        } catch {}
+      }
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+  } catch (e) {
+    responseEl.innerHTML = `<span style="color:#DC4B5C">❌ Error: ${e.message}</span>`;
+  }
+
+  ptlStreaming = false;
+  document.getElementById('ptl-send-btn').disabled = false;
+  input.focus();
+  msgs.scrollTop = msgs.scrollHeight;
+}
+</script>
+</body>
+</html>
