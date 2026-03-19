@@ -1088,6 +1088,20 @@ app.post('/api/sprint/:sprintId/notify', async (req, res) => {
   }
 });
 
+// ─── ADF → texto plano (Atlassian Document Format) ───────────────────────────
+function adfToText(doc) {
+  if (!doc) return '';
+  if (typeof doc === 'string') return doc;
+  const texts = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.type === 'text') texts.push(node.text || '');
+    if (node.content) node.content.forEach(walk);
+  }
+  walk(doc);
+  return texts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 // ─── PTL: Listar epics del proyecto ──────────────────────────────────────────
 app.get('/api/ptl/epics', async (req, res) => {
   try {
@@ -1124,20 +1138,6 @@ app.get('/api/ptl/epic/:epicKey', async (req, res) => {
       maxResults: 100,
     });
 
-    // Extraer texto plano de descripción ADF
-    function adfToText(doc) {
-      if (!doc) return '';
-      if (typeof doc === 'string') return doc;
-      const texts = [];
-      function walk(node) {
-        if (!node) return;
-        if (node.type === 'text') texts.push(node.text || '');
-        if (node.content) node.content.forEach(walk);
-      }
-      walk(doc);
-      return texts.join(' ').replace(/\s+/g, ' ').trim();
-    }
-
     const issues = (children.issues || []).map(i => ({
       key: i.key,
       type: i.fields.issuetype?.name,
@@ -1162,126 +1162,181 @@ app.get('/api/ptl/epic/:epicKey', async (req, res) => {
   }
 });
 
-// ─── PTL Chat (Product Tech Lead Assistant) ───────────────────────────────────
-const PTL_KNOWLEDGE_BASE = fs.existsSync(path.join(__dirname, 'ptl-knowledge-base.md'))
-  ? fs.readFileSync(path.join(__dirname, 'ptl-knowledge-base.md'), 'utf-8')
-  : '';
+// ─── PTL Chat — Confluence helpers ────────────────────────────────────────────
+async function confluenceRequest(path) {
+  const url = `https://${JIRA_HOST}/wiki/rest/api${path}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Confluence API error ${res.status}: ${text}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
+async function searchConfluence(query) {
+  const cql = encodeURIComponent(`text ~ "${query}" ORDER BY score DESC`);
+  const data = await confluenceRequest(`/content/search?cql=${cql}&limit=6&expand=excerpt`);
+  return (data.results || []).map(p => ({
+    id: p.id,
+    title: p.title,
+    url: `https://${JIRA_HOST}/wiki${p._links?.webui || ''}`,
+    excerpt: (p.excerpt || '').replace(/<[^>]+>/g, '').trim(),
+  }));
+}
+
+async function getConfluencePage(pageId) {
+  const data = await confluenceRequest(`/content/${pageId}?expand=body.storage`);
+  const raw = data.body?.storage?.value || '';
+  const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 12000);
+  return { id: data.id, title: data.title, text };
+}
+
+// ─── PTL Chat — Claude tools ──────────────────────────────────────────────────
+const PTL_TOOLS = [
+  {
+    name: 'search_confluence',
+    description: 'Busca páginas en Confluence de ComunidadFeliz. Úsalo para encontrar documentación técnica, decisiones de arquitectura, flujos de pago, etc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Texto libre a buscar en Confluence' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'get_confluence_page',
+    description: 'Obtiene el contenido completo de una página de Confluence por su ID numérico.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        page_id: { type: 'string', description: 'ID numérico de la página' },
+      },
+      required: ['page_id'],
+    },
+  },
+  {
+    name: 'search_jira_issues',
+    description: 'Busca issues en Jira del proyecto PAY usando JQL. Útil para ver historias relacionadas, bugs activos, o el estado del sprint.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        jql: { type: 'string', description: 'Query JQL (ej: project = PAY AND issuetype = Story AND sprint in openSprints())' },
+        max_results: { type: 'number', description: 'Máximo de resultados, default 20' },
+      },
+      required: ['jql'],
+    },
+  },
+  {
+    name: 'get_jira_epic',
+    description: 'Obtiene un epic de Jira con todas sus historias de usuario, estados y asignados.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        epic_key: { type: 'string', description: 'Key del epic, ej: PAY-1234' },
+      },
+      required: ['epic_key'],
+    },
+  },
+];
+
+async function executePtlTool(name, input) {
+  if (name === 'search_confluence') {
+    const results = await searchConfluence(input.query);
+    if (!results.length) return 'No se encontraron páginas en Confluence para esa búsqueda.';
+    return results.map(p => `**${p.title}** (ID: ${p.id})\n${p.excerpt}\n${p.url}`).join('\n\n---\n\n');
+  }
+
+  if (name === 'get_confluence_page') {
+    const page = await getConfluencePage(input.page_id);
+    return `# ${page.title}\n\n${page.text}`;
+  }
+
+  if (name === 'search_jira_issues') {
+    const data = await jiraSearchJql({
+      jql: input.jql,
+      maxResults: input.max_results || 20,
+      fields: ['summary', 'status', 'issuetype', 'assignee', 'priority', 'description', 'customfield_10027'],
+    });
+    const issues = data.issues || [];
+    if (!issues.length) return 'No se encontraron issues para ese JQL.';
+    return issues.map(i =>
+      `${i.key}: [${i.fields.issuetype?.name}] ${i.fields.summary} | ${i.fields.status?.name} | ${i.fields.assignee?.displayName || 'Sin asignar'}`
+    ).join('\n');
+  }
+
+  if (name === 'get_jira_epic') {
+    const epic = await jiraRequest(`/issue/${input.epic_key}?fields=summary,description,status,assignee,priority`);
+    const children = await jiraSearchJql({
+      jql: `"Epic Link" = ${input.epic_key} OR parent = ${input.epic_key} ORDER BY status ASC`,
+      fields: ['summary', 'status', 'issuetype', 'assignee', 'priority', 'description', 'customfield_10027'],
+      maxResults: 100,
+    });
+    const desc = adfToText(epic.fields.description);
+    const stories = (children.issues || []).map(i =>
+      `- ${i.key} [${i.fields.issuetype?.name}] ${i.fields.summary} | ${i.fields.status?.name} | ${i.fields.assignee?.displayName || 'Sin asignar'} | ${i.fields.customfield_10027 || '?'} pts\n  ${adfToText(i.fields.description).slice(0, 200)}`
+    ).join('\n');
+    return `# Epic ${epic.key}: ${epic.fields.summary}\nEstado: ${epic.fields.status?.name}\n\n${desc}\n\n## Historias (${children.issues?.length || 0}):\n${stories}`;
+  }
+
+  return `Tool "${name}" no reconocida.`;
+}
+
+// ─── PTL Chat — system prompt ─────────────────────────────────────────────────
 const PTL_SYSTEM_PROMPT = `Eres el Product Tech Lead (PTL) del equipo de Payments de ComunidadFeliz.
 Tu rol es analizar requerimientos técnicos, diseñar soluciones de arquitectura y guiar al equipo de desarrollo.
+
+Tenés acceso a herramientas para consultar la documentación real del sistema:
+- search_confluence: busca en Confluence (arquitectura, decisiones técnicas, flujos)
+- get_confluence_page: lee el contenido completo de una página
+- search_jira_issues: busca issues/historias en Jira con JQL
+- get_jira_epic: obtiene un epic completo con todas sus historias
+
+**Siempre consultá Confluence antes de responder sobre arquitectura o componentes del sistema.**
+Cuando analices un epic, usá get_jira_epic para ver todas sus historias antes de responder.
 
 ## Tu expertise
 - Arquitectura del Portal de Pagos 2.0 (Rails 6.1 / Ruby 3 / PostgreSQL)
 - Integración Web ↔ Portal de Pagos (API REST, JWT, webhooks)
-- Pasarelas de pago: Webpay Plus, OneClick (Transbank), Kushki, Toku, Etpay
+- Pasarelas de pago: Webpay Plus, OneClick (Transbank), Kushki, Toku, Etpay, STP (México)
 - Patrón Processor (Enrollment, Transaction, Webhook, Refund)
 - Portal de Operaciones y reconciliación bancaria (Fintoc)
 - Portal de Devoluciones y dispersiones
 - Pagos automáticos (Sidekiq, OneClick tokens)
 
 ## Cómo responder a un epic o requerimiento
-Cuando te den un epic o requerimiento, estructura tu respuesta así:
-
-### 1. Análisis del requerimiento
-Qué se está pidiendo, contexto de negocio, impacto esperado.
-
-### 2. Componentes afectados
-Qué partes del sistema se tocan (Portal de Pagos, Web, Portal de Operaciones, etc.) y por qué.
-
-### 3. Solución técnica propuesta
-Diseño detallado: modelos, endpoints, lógica de negocio, flujo de datos. Incluye código Ruby/Rails cuando sea relevante.
-
-### 4. Historias de usuario sugeridas
-Si el epic no tiene historias o están incompletas, propón un desglose en tareas técnicas concretas con criterios de aceptación.
-
-### 5. Riesgos y consideraciones
-Edge cases, compatibilidad con pasarelas existentes, impacto en comunidades activas, rollback strategy.
+1. **Análisis del requerimiento** — qué se pide, contexto de negocio, impacto
+2. **Componentes afectados** — qué partes del sistema se tocan y por qué
+3. **Solución técnica propuesta** — modelos, endpoints, lógica, flujo de datos; incluí código Ruby/Rails cuando sea relevante
+4. **Historias de usuario sugeridas** — si el epic no las tiene o están incompletas
+5. **Riesgos y consideraciones** — edge cases, compatibilidad, impacto en comunidades activas, rollback
 
 ## Reglas
-- Responde SIEMPRE en español
-- Sé específico: nombra archivos, modelos, controllers, métodos reales del sistema
-- Si el epic tiene historias en Jira, analízalas una por una
-- Si hay ambigüedad en el requerimiento, señálala explícitamente antes de proponer solución
-- No trunces la respuesta — si es larga, complétala
+- Respondé SIEMPRE en español
+- Sé específico: nombrá archivos, modelos, controllers, métodos reales
+- Si hay ambigüedad, señalala antes de proponer solución
+- No trunces la respuesta`;
 
-## Base de conocimiento de arquitectura
----
-${PTL_KNOWLEDGE_BASE}
----`;
-
-// ── Provider detection (first match wins) ──────────────────────────────────
-function getPtlProvider() {
-  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
-  if (process.env.GROQ_API_KEY)      return 'groq';
-  if (process.env.OLLAMA_HOST || process.env.OLLAMA_MODEL) return 'ollama';
-  return null;
-}
-
-const ptlAnthropicClient = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
-
-// Conversation history per session (in-memory, keyed by sessionId)
+// ─── PTL Chat — sesiones y endpoint ──────────────────────────────────────────
 const ptlSessions = {};
-
-// ── Stream via OpenAI-compatible REST (Groq / Ollama) ─────────────────────
-async function streamOpenAICompat({ baseUrl, apiKey, model, messages, res }) {
-  const body = JSON.stringify({
-    model,
-    messages: [{ role: 'system', content: PTL_SYSTEM_PROMPT }, ...messages],
-    stream: true,
-    max_tokens: 8192,
-  });
-
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-
-  const upstream = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers, body });
-  if (!upstream.ok) {
-    const txt = await upstream.text();
-    throw new Error(`${upstream.status}: ${txt}`);
-  }
-
-  let fullText = '';
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  for await (const chunk of upstream.body) {
-    buf += decoder.decode(chunk, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-      try {
-        const data = JSON.parse(line.slice(6));
-        const delta = data.choices?.[0]?.delta?.content;
-        if (delta) {
-          fullText += delta;
-          res.write(`data: ${JSON.stringify({ delta })}\n\n`);
-        }
-      } catch {}
-    }
-  }
-  return fullText;
-}
+const ptlClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 app.get('/api/ptl/status', (req, res) => {
-  const provider = getPtlProvider();
-  res.json({
-    provider,
-    model: provider === 'anthropic' ? 'claude-opus-4-6'
-         : provider === 'groq'      ? (process.env.GROQ_MODEL || 'llama-3.1-8b-instant')
-         : provider === 'ollama'    ? (process.env.OLLAMA_MODEL || 'llama3.2')
-         : null,
-  });
+  res.json({ provider: 'anthropic', model: 'claude-opus-4-6' });
 });
 
 app.post('/api/ptl/chat', async (req, res) => {
-  const provider = getPtlProvider();
-  if (!provider) {
-    return res.status(503).json({
-      error: 'Ningún proveedor de IA configurado. Agrega GROQ_API_KEY (gratis en console.groq.com) u OLLAMA_HOST al .env',
-    });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY no configurada.' });
   }
   const { message, sessionId } = req.body;
   if (!message || !sessionId) {
@@ -1298,43 +1353,62 @@ app.post('/api/ptl/chat', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  try {
-    let fullText = '';
+  const toolLabels = {
+    search_confluence:  '🔍 Buscando en Confluence...',
+    get_confluence_page:'📄 Leyendo página de Confluence...',
+    search_jira_issues: '🎯 Consultando Jira...',
+    get_jira_epic:      '📋 Cargando epic de Jira...',
+  };
 
-    if (provider === 'anthropic') {
-      const stream = ptlAnthropicClient.messages.stream({
+  try {
+    let msgs = [...ptlSessions[sessionId]];
+    let finalText = '';
+
+    // Tool-use loop (máx 6 iteraciones)
+    for (let iter = 0; iter < 6; iter++) {
+      const response = await ptlClient.messages.create({
         model: 'claude-opus-4-6',
         max_tokens: 8192,
         system: PTL_SYSTEM_PROMPT,
-        messages: ptlSessions[sessionId],
-      });
-      stream.on('text', (delta) => {
-        fullText += delta;
-        res.write(`data: ${JSON.stringify({ delta })}\n\n`);
-      });
-      await stream.finalMessage();
-
-    } else if (provider === 'groq') {
-      fullText = await streamOpenAICompat({
-        baseUrl: 'https://api.groq.com/openai/v1',
-        apiKey: process.env.GROQ_API_KEY,
-        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-        messages: ptlSessions[sessionId],
-        res,
+        tools: PTL_TOOLS,
+        messages: msgs,
       });
 
-    } else if (provider === 'ollama') {
-      const ollamaHost = (process.env.OLLAMA_HOST || 'http://localhost:11434').replace(/\/$/, '');
-      fullText = await streamOpenAICompat({
-        baseUrl: `${ollamaHost}/v1`,
-        apiKey: null,
-        model: process.env.OLLAMA_MODEL || 'llama3.2',
-        messages: ptlSessions[sessionId],
-        res,
-      });
+      if (response.stop_reason === 'end_turn') {
+        finalText = response.content.find(b => b.type === 'text')?.text || '';
+        // Stream por chunks para efecto de tipeo
+        const words = finalText.split(/(\s+)/);
+        for (let i = 0; i < words.length; i += 8) {
+          const chunk = words.slice(i, i + 8).join('');
+          res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
+        }
+        break;
+      }
+
+      if (response.stop_reason === 'tool_use') {
+        msgs.push({ role: 'assistant', content: response.content });
+        const toolResults = [];
+
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue;
+          res.write(`data: ${JSON.stringify({ tool: toolLabels[block.name] || `⚙️ ${block.name}...` })}\n\n`);
+          let result;
+          try {
+            result = await executePtlTool(block.name, block.input);
+          } catch (e) {
+            result = `Error en ${block.name}: ${e.message}`;
+          }
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+        }
+
+        msgs.push({ role: 'user', content: toolResults });
+        continue;
+      }
+
+      break;
     }
 
-    ptlSessions[sessionId].push({ role: 'assistant', content: fullText });
+    ptlSessions[sessionId].push({ role: 'assistant', content: finalText });
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (e) {
