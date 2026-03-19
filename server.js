@@ -1343,8 +1343,8 @@ app.delete('/api/ptl/session/:sessionId', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n✅  Payments Dashboard corriendo en http://localhost:${PORT}\n`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n✅  Payments Dashboard corriendo en http://0.0.0.0:${PORT}\n`);
 });
 
 // ─── Cron: resumen automático a #cfz-payments-chat (lunes y jueves, 9:00am) ──
