@@ -97,20 +97,27 @@ async function jiraRequest(path, isAgile = false) {
 
 async function jiraSearchJql(body) {
   const url = `https://${JIRA_HOST}/rest/api/3/search/jql`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${auth}`,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Jira API error ${res.status}: ${text}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Jira API error ${res.status}: ${text}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -630,7 +637,6 @@ app.get('/api/bugs', async (req, res) => {
         jql: openJql, maxResults: 100,
         fields: ['summary', 'status', 'issuetype', 'assignee', 'customfield_10027',
                  'customfield_10018', 'created', 'priority', 'description'],
-        expand: 'changelog',
       }),
       jiraSearchJql({
         jql: resolvedJql, maxResults: 50,
